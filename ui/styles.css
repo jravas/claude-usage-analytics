@@ -1551,3 +1551,25 @@ pre.preview {
   font-weight: 500;
   color: var(--text-2);
 }
+
+/* Narrow windows: the name column keeps a readable width and the table
+   scrolls sideways instead, with the name column pinned. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+table.breakdown {
+  min-width: 980px;
+}
+
+table.breakdown th:first-child,
+table.breakdown td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+table.breakdown tr.link:hover td:first-child {
+  background: linear-gradient(var(--fill), var(--fill)), var(--bg);
+}

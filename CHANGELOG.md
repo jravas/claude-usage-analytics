@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-16
+
+### Fixed
+
+- Table name columns keep a readable width and stay pinned; narrow windows
+  scroll the numbers sideways instead of squeezing names away.
+
 ## [0.1.1] - 2026-11-16
 
 ### Changed

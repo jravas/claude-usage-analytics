@@ -6,6 +6,7 @@ mod live;
 mod settings;
 mod state;
 mod tray;
+mod usual;
 mod watcher;
 
 use tauri::{Manager, RunEvent, WindowEvent};

@@ -261,6 +261,8 @@ A dedicated **Insights** page lists all active insights with cost, trend, and ev
 
 Note: plan-limit percentage cannot be shown: it is not in local data. Say so in the popover rather than approximating it.
 
+Revised after 0.1.0: dollars and a percentage against last week's same morning meant nothing on a subscription plan (tiny baselines gave "↑346%"). The title now defaults to today as a multiple of the user's usual day (median of the last 4 weeks' active days of the same kind, weekday or weekend, cut at the same time of day, in weighted tokens), and shows today's amount instead when there are too few days or a usual day has barely started. A `menuBar` setting picks context size, weighted, raw tokens, cost or icon only instead.
+
 ### 4.I Explanations inside the app
 
 Why: the data is only clear if the user understands three ideas: every request re-sends the conversation; cached tokens are cheap but not free and expire; fixed overhead rides on every request.

@@ -28,14 +28,15 @@ All screenshots in this README use made-up demo data.
 | **Session**    | What filled the context, item by item; the context size over the session with compactions and cache rebuilds marked; each prompt and what it set off; the largest single items; what is sent with every request, with MCP servers that were loaded but never called. |
 | **Insights**   | Ranked findings, each with the tokens it accounts for and one thing to change: long sessions, heavy tool definitions, large `CLAUDE.md` files, oversized tool results, idle cache rebuilds. |
 | **Compare**    | Export a summary with no paths, titles, prompts or tool arguments, and line colleagues' files up week by week.                                  |
-| **Menu bar**   | Today's cost and the change against last week. Optional notifications for a large context, a cache rewrite after a pause, or an unusually heavy day. |
+| **Menu bar**   | Today compared with your own usual day ("1.4× usual"), or the active session's context, weighted or raw tokens, or API cost. The menu spells out today and this week against usual and the active session's context and compactions. Optional notifications for a large context, a cache rewrite after a pause, or an unusually heavy day. |
 
 ![Session detail: cost, requests, context per request, warnings and what filled the context](docs/screenshots/session-detail.jpg)
 
 ![Insights: ranked findings with the tokens each accounts for and what to change](docs/screenshots/insights.jpg)
 
-Amounts can be shown as **cost**, **price-weighted tokens** or **raw tokens**.
-Cost is the default because raw tokens are dominated by cheap cache reads. It
+Amounts can be shown as **price-weighted tokens**, **cost** or **raw tokens**.
+Weighted tokens are the default: raw tokens are dominated by cheap cache reads,
+and dollars mean nothing on a subscription plan. Cost is one click away and
 uses a dated table of Anthropic's published API prices and matches Claude
 Code's own cost estimate for sessions recorded by current Claude Code. It is
 what the tokens would cost on the API, not what a subscription bills.

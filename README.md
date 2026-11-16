@@ -50,9 +50,13 @@ One command does that; it is included in each path below.
 
 ```bash
 brew tap jravas/tap
+brew trust jravas/tap
 brew install --cask claude-usage-analytics
 xattr -dr com.apple.quarantine "/Applications/Claude Usage Analytics.app"
 ```
+
+`brew trust` is needed once per Mac: recent Homebrew refuses to install from
+third-party taps until you trust them.
 
 Upgrades are `brew upgrade --cask claude-usage-analytics` followed by the same
 `xattr` line. The cask definition lives in

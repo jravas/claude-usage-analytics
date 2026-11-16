@@ -75,7 +75,6 @@
     },
     hour: () => wrap(line("50%"), panel("12%", bars(24, 200)), rows(8)),
     learn: () => wrap(panel("30%", [line("90%"), line("84%"), line("70%"), block(160)]), panel("26%", [line("88%"), line("64%")])),
-    compare: () => wrap(panel("24%", [line("70%"), block(36)]), panel("20%", rows(4, [20, 14, 14, 14, 14, 14]))),
     settings: () => wrap(panel("22%", rows(5, [60, 20])), panel("18%", rows(3, [60, 20]))),
   };
 

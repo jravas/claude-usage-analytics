@@ -23,7 +23,6 @@ const VIEWS = {
   agent: "Main vs subagents",
   hour: "Time of day",
   insights: "Insights",
-  compare: "Compare",
   settings: "Settings",
   learn: "How usage works",
 };
@@ -39,6 +38,11 @@ const UNITS = {
   tokens: { name: "Tokens", long: "tokens", get: (t) => t.total, fmt: fmtTok },
 };
 const U = () => UNITS[state.unit] || UNITS.weighted;
+// Small unit label after a big number, so "20.5M" says what it counts.
+function unitHint() {
+  const t = { weighted: "weighted", tokens: "tokens" }[state.unit];
+  return t ? el("span", { class: "unit-hint", text: t }) : null;
+}
 
 function fmtUsd(x) {
   if (x == null || !isFinite(x)) return "—";
@@ -65,7 +69,7 @@ const TOKEN_SERIES = [
 ];
 
 const state = Object.assign(
-  { view: "overview", model: "", range: 14, weekdays: false, metric: "total", split: false, unit: "weighted", unitChosen: false },
+  { view: "overview", model: "", range: 14, metric: "total", split: false, unit: "weighted", unitChosen: false },
   loadPrefs(),
   { models: [], busy: false, refreshedAt: null, error: null, session: null, filesSeen: null, progress: null },
 );
@@ -115,7 +119,9 @@ function change(before, after) {
   return before > 0 ? ((after - before) / before) * 100 : null;
 }
 
+// Big increases read better as a multiple: "+1407%" says less than "15.1×".
 function fmtChange(c) {
+  if (c >= 200) return `${(c / 100 + 1).toFixed(c >= 900 ? 0 : 1)}×`;
   return `${c > 0 ? "+" : c < 0 ? "−" : ""}${Math.abs(c).toFixed(0)}%`;
 }
 
@@ -162,8 +168,8 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    const { view, model, range, weekdays, metric, split, unit, unitChosen } = state;
-    localStorage.setItem("prefs", JSON.stringify({ view, model, range, weekdays, metric, split, unit, unitChosen }));
+    const { view, model, range, metric, split, unit, unitChosen } = state;
+    localStorage.setItem("prefs", JSON.stringify({ view, model, range, metric, split, unit, unitChosen }));
   } catch {
     /* storage unavailable: preferences just don't persist */
   }
@@ -173,14 +179,13 @@ function filter(extra = {}) {
   return {
     from: daysAgo(state.range - 1),
     to: today(),
-    weekdaysOnly: state.weekdays,
     model: state.model || null,
     ...extra,
   };
 }
 
 function rangeText() {
-  return `last ${state.range} days${state.weekdays ? ", weekdays" : ""}${state.model ? `, ${state.model}` : ""}`;
+  return `last ${state.range} days${state.model ? `, ${state.model}` : ""}`;
 }
 
 function emptyState(title, detail, ...actions) {
@@ -225,21 +230,21 @@ async function renderOverview(body) {
       "div",
       { class: "card" },
       el("h3", {}, term(u.name, "Today")),
-      el("div", { class: "big" }, u.fmt(u.get(o.todayTotals)), delta(u.get(o.sameDayLastWeek), u.get(o.todayTotals), `vs last ${wd} at the same time`)),
+      el("div", { class: "big" }, u.fmt(u.get(o.todayTotals)), unitHint(), delta(u.get(o.sameDayLastWeek), u.get(o.todayTotals), `vs last ${wd} at the same time`)),
       el("div", { class: "sub", text: `${fmtInt(o.todayTotals.requests)} requests · last ${wd} by ${o.asOf}: ${u.fmt(u.get(o.sameDayLastWeek))}` }),
     ),
     el(
       "div",
       { class: "card" },
       el("h3", {}, term(u.name, "This week so far")),
-      el("div", { class: "big" }, u.fmt(u.get(t)), delta(u.get(l), u.get(t), "vs last week to the same time")),
+      el("div", { class: "big" }, u.fmt(u.get(t)), unitHint(), delta(u.get(l), u.get(t), "vs last week to the same time")),
       el("div", { class: "sub", text: `${fmtInt(t.requests)} requests · last week to ${wd} ${o.asOf}: ${u.fmt(u.get(l))}` }),
     ),
     el(
       "div",
       { class: "card" },
       el("h3", {}, term(u.name, "Last week")),
-      el("div", { class: "big", text: u.fmt(u.get(o.lastWeek)) }),
+      el("div", { class: "big" }, u.fmt(u.get(o.lastWeek)), unitHint()),
       el("div", { class: "sub", text: `${fmtInt(o.lastWeek.requests)} requests · ${fmtTok(o.lastWeek.total)} tokens` }),
       el("div", { class: "card-spark", title: `${u.name} per day, last 14 days` }, spark()),
     ),
@@ -455,12 +460,10 @@ function noData() {
           render();
         })
       : null,
-    state.model || state.weekdays
-      ? linkButton("Clear filters", () => {
+    state.model
+      ? linkButton("Show all models", () => {
           state.model = "";
-          state.weekdays = false;
           $("#model").value = "";
-          $("#weekdays").checked = false;
           savePrefs();
           render();
         })
@@ -529,8 +532,7 @@ async function renderBreakdown(body, dim) {
     { key: "requests", label: "Requests", value: (g) => g.totals.requests, text: (g) => fmtInt(g.totals.requests) },
     { key: "cost", label: "Cost", value: (g) => g.totals.costUsd, text: (g) => fmtUsd(g.totals.costUsd) },
     { key: "output", label: "Output", value: (g) => g.totals.output, text: (g) => fmtTok(g.totals.output) },
-    { key: "cacheRead", label: "Cache read", value: (g) => g.totals.cacheRead, text: (g) => fmtTok(g.totals.cacheRead) },
-    { key: "total", label: "Total", term: "Total tokens", value: (g) => g.totals.total, text: (g) => fmtTok(g.totals.total) },
+    { key: "total", label: "Tokens", term: "Total tokens", value: (g) => g.totals.total, text: (g) => fmtTok(g.totals.total) },
     {
       key: "share",
       label: "Share",
@@ -669,7 +671,7 @@ async function render() {
   }
   host0.setAttribute("aria-busy", "true");
   $("#title").textContent = detail ? "Session" : VIEWS[state.view] || "Overview";
-  $(".filters").hidden = !!detail || ["settings", "compare", "learn"].includes(state.view);
+  $(".filters").hidden = !!detail || ["settings", "learn"].includes(state.view);
   $("#scope").hidden = !detail;
   document.querySelectorAll(".nav-item").forEach((a) => {
     const on = a.dataset.view === state.view;
@@ -682,7 +684,6 @@ async function render() {
     if (detail) await renderSession(body, state.session);
     else if (state.view === "learn") await renderLearn(body);
     else if (state.view === "insights") await renderInsights(body);
-    else if (state.view === "compare") await renderCompare(body);
     else if (state.view === "settings") await renderSettings(body);
     else if (state.filesSeen === 0) body.append(noTranscripts());
     else if (state.view === "overview") await renderOverview(body);
@@ -828,12 +829,6 @@ for (const [id, key, parse] of [
     render();
   });
 }
-$("#weekdays").checked = state.weekdays;
-$("#weekdays").addEventListener("change", (e) => {
-  state.weekdays = e.target.checked;
-  savePrefs();
-  render();
-});
 document.addEventListener("keydown", (e) => {
   // Escape on a session page goes back to the list.
   if (e.key === "Escape" && state.session && !e.defaultPrevented && !document.querySelector(".intro")) go("session");

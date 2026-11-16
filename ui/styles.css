@@ -1063,7 +1063,7 @@ table.breakdown th:not(:first-child) {
 }
 
 table.breakdown col:not(:first-child) {
-  width: 92px;
+  width: 78px;
 }
 
 .cell-label {
@@ -1542,5 +1542,12 @@ pre.preview {
   margin: var(--s4) 0 var(--s2);
   font-size: var(--fs-sm);
   font-weight: 600;
+  color: var(--text-2);
+}
+
+.unit-hint {
+  margin-left: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
   color: var(--text-2);
 }

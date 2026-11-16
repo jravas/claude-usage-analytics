@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format follows
   active session's context, weighted tokens, raw tokens, API cost or icon
   only. The menu explains today and this week against usual, the session's
   context and compactions, and that plan limits are not in local data.
+- The Compare page is gone for now; `usage export` and `usage compare` still
+  work from the command line.
+- Removed the "Weekdays only" filter.
+- Big numbers on the Overview cards say what unit they are in.
 - The app's unit switch defaults to weighted tokens, labelled "Usage"; cost
   stays one click away.
 

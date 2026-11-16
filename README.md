@@ -27,7 +27,6 @@ All screenshots in this README use made-up demo data.
 | **Breakdowns** | Models, projects (worktrees fold into their repo), sessions, effort level, main thread against subagents, hour of day and a 13-week calendar.   |
 | **Session**    | What filled the context, item by item; the context size over the session with compactions and cache rebuilds marked; each prompt and what it set off; the largest single items; what is sent with every request, with MCP servers that were loaded but never called. |
 | **Insights**   | Ranked findings, each with the tokens it accounts for and one thing to change: long sessions, heavy tool definitions, large `CLAUDE.md` files, oversized tool results, idle cache rebuilds. |
-| **Compare**    | Export a summary with no paths, titles, prompts or tool arguments, and line colleagues' files up week by week.                                  |
 | **Menu bar**   | Today compared with your own usual day ("1.4× usual"), or the active session's context, weighted or raw tokens, or API cost. The menu spells out today and this week against usual and the active session's context and compactions. Optional notifications for a large context, a cache rewrite after a pause, or an unusually heavy day. |
 
 ![Session detail: cost, requests, context per request, warnings and what filled the context](docs/screenshots/session-detail.jpg)
@@ -114,8 +113,7 @@ index after their transcript is deleted, so history survives a cleanup with
 
 - Plan-limit percentages: they are not stored locally, and the app never
   approximates them.
-- claude.ai chats, other computers, and other people (unless they share a
-  summary file with you).
+- claude.ai chats, other computers, and other people.
 
 ## How it counts
 

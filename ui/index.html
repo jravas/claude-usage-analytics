@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Usage Analytics</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="drag" data-tauri-drag-region></div>
+      <nav class="nav" id="nav" aria-label="Views">
+        <button class="nav-item" data-view="overview">Overview</button>
+        <div class="nav-section" role="presentation">Breakdown</div>
+        <button class="nav-item" data-view="model">Models</button>
+        <button class="nav-item" data-view="project">Projects</button>
+        <button class="nav-item" data-view="session">Sessions</button>
+        <button class="nav-item" data-view="effort">Effort</button>
+        <button class="nav-item" data-view="agent">Main vs subagents</button>
+        <button class="nav-item" data-view="hour">Time of day</button>
+        <div class="nav-section" role="presentation">Act</div>
+        <button class="nav-item" data-view="insights">Insights</button>
+        <button class="nav-item" data-view="compare">Compare</button>
+        <div class="nav-section" role="presentation">Learn</div>
+        <button class="nav-item" data-view="learn">How usage works</button>
+        <button class="nav-item about" id="about" type="button">About this data</button>
+        <button class="nav-item" data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot">
+        <button id="refresh" class="btn">Refresh</button>
+        <span id="refreshed" class="muted" aria-live="polite"></span>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="toolbar" data-tauri-drag-region>
+        <h1 id="title">Overview</h1>
+        <span id="scope" class="scope muted" hidden></span>
+        <div class="filters">
+          <select id="unit" title="Show amounts as" aria-label="Show amounts as">
+            <option value="cost">Cost ($)</option>
+            <option value="weighted">Weighted tokens</option>
+            <option value="tokens">Raw tokens</option>
+          </select>
+          <select id="model" title="Model" aria-label="Model">
+            <option value="">All models</option>
+          </select>
+          <select id="range" title="Range" aria-label="Date range">
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="28">Last 28 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <label class="toggle"><input type="checkbox" id="weekdays" /> Weekdays only</label>
+        </div>
+      </header>
+      <div id="progress" class="progress" hidden role="status"><div class="bar"></div><span></span></div>
+      <div class="body" id="body" tabindex="-1"></div>
+    </main>
+
+    <script src="glossary.js"></script>
+    <script src="charts.js"></script>
+    <script src="table.js"></script>
+    <script src="skeleton.js"></script>
+    <script src="app.js"></script>
+    <script src="session.js"></script>
+    <script src="learn.js"></script>
+    <script src="pages.js"></script>
+  </body>
+</html>

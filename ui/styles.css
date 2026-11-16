@@ -1488,6 +1488,7 @@ tr.unused td {
 
 .form-grid input[type="number"],
 .form-grid input[type="text"],
+.form-grid select,
 .compare-bar input[type="text"],
 .compare-bar select {
   width: 120px;
@@ -1497,6 +1498,11 @@ tr.unused td {
   background: var(--bg);
   color: var(--text);
   font: inherit;
+}
+
+.form-grid select {
+  width: auto;
+  max-width: 280px;
 }
 
 .compare-bar {

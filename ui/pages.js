@@ -194,6 +194,15 @@ async function renderCompare(body) {
 }
 
 // ---------- Settings ----------
+// Menu bar title modes: value (as in settings.rs MenuBar), label, hint.
+const MENU_BAR_MODES = [
+  ["usual", "Today compared with a usual day", "For example “1.4× usual”: today's weighted tokens against your median day of the same kind (weekday or weekend) over the last 4 weeks, up to the same time of day. Shows today's amount until there is enough history."],
+  ["context", "Active session's context size", "Tokens the latest request of the session you are working in sent. Empty when no session was active in the last 30 minutes."],
+  ["weighted", "Today's weighted tokens", "Tokens counted by price, so cache reads count little."],
+  ["tokens", "Today's raw tokens", "Mostly cache reads."],
+  ["cost", "Today's API-equivalent cost", "What the API would charge. Useful if you pay per token; not what a subscription bills."],
+  ["icon", "Icon only", "No text."],
+];
 async function renderSettings(body) {
   const [s, prices] = await Promise.all([invoke("get_settings"), invoke("price_info").catch(() => null)]);
   const save = async (patch) => {
@@ -237,8 +246,22 @@ async function renderSettings(body) {
     el(
       "section",
       { class: "panel" },
-      el("div", { class: "panel-head" }, el("h2", { text: "App" })),
-      el("div", { class: "form-grid" }, check("launchAtLogin", "Open at login", "Starts in the menu bar with the window hidden.")),
+      el("div", { class: "panel-head" }, el("h2", { text: "Menu bar" })),
+      el("p", {
+        class: "note top",
+        text: "Plan-limit usage is not in local data, so the menu bar never shows it or guesses it. By default it compares today with your own usual day instead.",
+      }),
+      el(
+        "div",
+        { class: "form-grid" },
+        el("label", { for: "set-menuBar" }, "Show next to the icon", el("span", { class: "hint", text: MENU_BAR_MODES.find(([v]) => v === s.menuBar)?.[2] || "" })),
+        el(
+          "select",
+          { id: "set-menuBar", "data-fk": "set-menuBar", onchange: (e) => save({ menuBar: e.target.value }) },
+          MENU_BAR_MODES.map(([v, t]) => el("option", { value: v, text: t, selected: v === s.menuBar ? "" : null })),
+        ),
+        check("launchAtLogin", "Open at login", "Starts in the menu bar with the window hidden."),
+      ),
     ),
     el(
       "section",

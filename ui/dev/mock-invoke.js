@@ -405,7 +405,7 @@
   const SETTINGS = {
     notificationsEnabled: false, notifyContext: true, contextThresholdPct: 70, contextWindowTokens: 1000000,
     notifyCacheRewrite: true, cacheRewriteMinTokens: 100000, notifyDailySpike: true, dailySpikeMultiple: 2,
-    notifyCooldownMinutes: 60, launchAtLogin: false,
+    notifyCooldownMinutes: 60, launchAtLogin: false, menuBar: "usual",
   };
   const STUBS = {
     get_settings: () => ({ ...SETTINGS }),

@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The menu bar shows today against your own usual day up to the same time
+  ("1.4× usual", in price-weighted tokens) instead of API cost and a
+  percentage against last week. A setting (and a submenu) switches it to the
+  active session's context, weighted tokens, raw tokens, API cost or icon
+  only. The menu explains today and this week against usual, the session's
+  context and compactions, and that plan limits are not in local data.
+- The app's unit switch defaults to weighted tokens, labelled "Usage"; cost
+  stays one click away.
+
 ## [0.1.0] - 2026-11-16
 
 ### Added

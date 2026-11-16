@@ -30,14 +30,15 @@ const VIEWS = {
 // Singular column heading and glossary term per breakdown.
 const DIM_COL = { model: "Model", project: "Project", session: "Session", effort: "Effort", agent: "Thread", hour: "Hour" };
 
-// What "how much" means everywhere a total is shown. Raw tokens are mostly
-// cheap cache reads, so cost is the default.
+// What "how much" means everywhere a total is shown. Weighted tokens are the
+// default: raw tokens are mostly cheap cache reads, and dollars mean nothing
+// on a subscription plan. Cost stays one click away for API users.
 const UNITS = {
   cost: { name: "Cost", long: "API-equivalent cost", get: (t) => t.costUsd, fmt: (v) => fmtUsd(v) },
   weighted: { name: "Weighted tokens", long: "price-weighted tokens", get: (t) => t.weighted, fmt: fmtTok },
   tokens: { name: "Tokens", long: "tokens", get: (t) => t.total, fmt: fmtTok },
 };
-const U = () => UNITS[state.unit] || UNITS.cost;
+const U = () => UNITS[state.unit] || UNITS.weighted;
 
 function fmtUsd(x) {
   if (x == null || !isFinite(x)) return "—";
@@ -64,7 +65,7 @@ const TOKEN_SERIES = [
 ];
 
 const state = Object.assign(
-  { view: "overview", model: "", range: 14, weekdays: false, metric: "total", split: false, unit: "cost" },
+  { view: "overview", model: "", range: 14, weekdays: false, metric: "total", split: false, unit: "weighted", unitChosen: false },
   loadPrefs(),
   { models: [], busy: false, refreshedAt: null, error: null, session: null, filesSeen: null, progress: null },
 );
@@ -149,7 +150,11 @@ function shortDay(day) {
 
 function loadPrefs() {
   try {
-    return JSON.parse(localStorage.getItem("prefs") || "{}");
+    const p = JSON.parse(localStorage.getItem("prefs") || "{}");
+    // 0.1.0 stored its cost default as if chosen; only a unit the user picked
+    // overrides the weighted default.
+    if (!p.unitChosen) delete p.unit;
+    return p;
   } catch {
     return {};
   }
@@ -157,8 +162,8 @@ function loadPrefs() {
 
 function savePrefs() {
   try {
-    const { view, model, range, weekdays, metric, split, unit } = state;
-    localStorage.setItem("prefs", JSON.stringify({ view, model, range, weekdays, metric, split, unit }));
+    const { view, model, range, weekdays, metric, split, unit, unitChosen } = state;
+    localStorage.setItem("prefs", JSON.stringify({ view, model, range, weekdays, metric, split, unit, unitChosen }));
   } catch {
     /* storage unavailable: preferences just don't persist */
   }
@@ -787,6 +792,10 @@ listen("refresh-progress", (e) => {
   if (empty && /Reading|No usage/.test(empty.textContent) && state.progress) $("#body").replaceChildren(indexing());
 });
 listen("index-updated", onIndexUpdated);
+// The menu bar mode can be changed from the menu bar menu.
+listen("settings-changed", () => {
+  if (state.view === "settings" && !state.session) render();
+});
 
 // ---------- wiring ----------
 const nav = $("#nav");
@@ -814,6 +823,7 @@ for (const [id, key, parse] of [
   $(id).value = String(state[key]);
   $(id).addEventListener("change", (e) => {
     state[key] = parse(e.target.value);
+    if (key === "unit") state.unitChosen = true;
     savePrefs();
     render();
   });

@@ -1,22 +1,31 @@
-//! Menu bar item (plan 4.H.1). Its title shows today's tokens and the change
-//! against the same weekday last week up to the same time of day. The menu
-//! shows today, this week, the most recently active session and actions. It
-//! is rebuilt after every `index-updated`.
+//! Menu bar item (plan 4.H.1).
 //!
-//! Event for the UI: `open-session` with the session id (a string), emitted
-//! when the user picks the session row in the menu. The window is shown first.
+//! The title follows the `menuBar` setting. By default it compares today with
+//! the user's own usual day up to the same time ("1.4× usual", see
+//! `usual.rs`): on a subscription plan dollars mean nothing, and a percentage
+//! against last week's same morning explodes on a small baseline. Context
+//! size, weighted tokens, raw tokens, API-equivalent cost (for API users) and
+//! icon only are the other choices. The menu explains the numbers in words:
+//! today and this week against usual, the latest session's context and
+//! compactions, cost and raw tokens, and a submenu to pick the title. It is
+//! rebuilt after every `index-updated`.
+//!
+//! Events for the UI: `open-session` with the session id (a string), emitted
+//! when the user picks the session row in the menu (the window is shown
+//! first); `settings-changed` when the title mode is changed from the menu.
 //!
 //! Plan-limit usage is not in local data, so the menu says so instead of
 //! estimating it.
 
 use crate::alerts::{Alerts, Notice};
 use crate::live::{self, ActiveSession};
-use crate::settings::SettingsState;
+use crate::settings::{self, MenuBar, Settings, SettingsState};
 use crate::state::{with_index, AppState};
+use crate::usual::{self, Report, Versus};
 use jiff::Zoned;
 use std::sync::Mutex;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 use tauri_plugin_notification::NotificationExt;
@@ -24,6 +33,9 @@ use usage_core::{fmt, query, Filter, Overview};
 
 const TRAY_ID: &str = "main";
 pub const OPEN_SESSION: &str = "open-session";
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+/// Menu ids of the title mode items: this prefix and `MenuBar::id`.
+const MODE_PREFIX: &str = "menu-bar:";
 
 /// Session id behind the menu's session row.
 #[derive(Default)]
@@ -57,7 +69,12 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn on_menu(app: &AppHandle, ev: MenuEvent) {
-    match ev.id().as_ref() {
+    let id = ev.id().as_ref();
+    if let Some(m) = id.strip_prefix(MODE_PREFIX).and_then(MenuBar::from_id) {
+        set_mode(app, m);
+        return;
+    }
+    match id {
         "open" => show_main(app),
         "session" => {
             show_main(app);
@@ -86,9 +103,14 @@ pub fn show_main(app: &AppHandle) {
 
 struct Snapshot {
     overview: Overview,
+    usual: Report,
     active: Option<ActiveSession>,
     notices: Vec<Notice>,
 }
+
+/// A session counts as active in the title for this long after its latest
+/// request.
+const ACTIVE_MS: i64 = 30 * 60_000;
 
 /// Re-read today's numbers, rebuild the menu and send due notifications.
 pub fn update(app: &AppHandle) {
@@ -97,6 +119,7 @@ pub fn update(app: &AppHandle) {
     let now = Zoned::now();
     let snap = with_index(&app.state::<AppState>().index, |i| {
         let overview = query::overview(&i.conn, &Filter::default(), &now)?;
+        let usual = usual::report(&i.conn, &now)?;
         let day_start = now
             .start_of_day()
             .map(|z| z.timestamp().as_millisecond())
@@ -105,6 +128,7 @@ pub fn update(app: &AppHandle) {
         let notices = alerts.check(&i.conn, &settings, overview.today_totals.total, &now)?;
         Ok(Snapshot {
             overview,
+            usual,
             active,
             notices,
         })
@@ -134,8 +158,16 @@ pub fn update(app: &AppHandle) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return;
     };
-    let _ = tray.set_title(Some(title(&snap.overview)));
-    match build_menu(app, &snap, &now) {
+    let t = title(settings.menu_bar, &snap, now.timestamp().as_millisecond());
+    let lines = menu_lines(&snap, &settings, &now);
+    if cfg!(debug_assertions) {
+        eprintln!("[tray] title: {:?}", t.as_deref().unwrap_or(""));
+        for l in lines.iter().filter(|l| l.id != "-") {
+            eprintln!("[tray] menu: {}", l.text);
+        }
+    }
+    let _ = tray.set_title(t);
+    match build_menu(app, &lines, settings.menu_bar) {
         Ok(m) => {
             let _ = tray.set_menu(Some(m));
         }
@@ -143,89 +175,217 @@ pub fn update(app: &AppHandle) {
     }
 }
 
-/// Today's API-equivalent cost and its change against last week at the same
-/// time. Cost, not tokens: tokens are mostly cheap cache reads.
-fn title(o: &Overview) -> String {
-    let today = o.today_totals.cost_usd;
-    let usd = usage_core::cost::format_usd(today);
-    match fmt::change(o.same_day_last_week.cost_usd, today) {
-        Some(c) => format!("{usd} {}", arrow(c)),
-        None => usd,
+/// A title mode picked from the menu: save it and redraw.
+fn set_mode(app: &AppHandle, m: MenuBar) {
+    let st = app.state::<SettingsState>();
+    let mut s = st.get();
+    if s.menu_bar == m {
+        return;
     }
+    s.menu_bar = m;
+    if let Err(e) = settings::save(app, &s) {
+        eprintln!("[settings] {e}");
+    }
+    if let Ok(mut g) = st.0.lock() {
+        *g = s;
+    }
+    let _ = app.emit(SETTINGS_CHANGED, ());
+    update(app);
 }
 
-fn arrow(c: f64) -> String {
-    if c.abs() < 0.5 {
-        "±0%".into()
-    } else if c > 0.0 {
-        format!("↑{c:.0}%")
-    } else {
-        format!("↓{:.0}%", -c)
-    }
-}
-
-fn signed(c: Option<f64>) -> String {
-    match c {
-        Some(c) if c.abs() >= 0.5 => format!("{:+.0}%", c),
-        Some(_) => "±0%".into(),
-        None => "no data".into(),
-    }
-}
-
-fn build_menu(app: &AppHandle, s: &Snapshot, now: &Zoned) -> tauri::Result<Menu<Wry>> {
+/// Text next to the menu bar icon, or None for the icon alone.
+fn title(mode: MenuBar, s: &Snapshot, now_ms: i64) -> Option<String> {
     let o = &s.overview;
-    let weekday = now.strftime("%a").to_string();
-    let today = format!(
-        "Today: {} · {} tokens · {} vs last {weekday} to {}",
-        usage_core::cost::format_usd(o.today_totals.cost_usd),
-        fmt::tokens(o.today_totals.total),
-        signed(fmt::change(
-            o.same_day_last_week.cost_usd,
-            o.today_totals.cost_usd
-        )),
-        o.as_of
-    );
-    let week = format!(
-        "This week: {} · {} tokens · {} vs last week to date",
-        usage_core::cost::format_usd(o.this_week.cost_usd),
-        fmt::tokens(o.this_week.total),
-        signed(fmt::change(
-            o.last_week_to_date.cost_usd,
-            o.this_week.cost_usd
-        ))
-    );
-    let info = |id: &str, text: &str| MenuItem::with_id(app, id, text, false, None::<&str>);
-    let menu = Menu::new(app)?;
-    menu.append(&info("today", &today)?)?;
-    menu.append(&info("week", &week)?)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    let weighted = || tokens_f(o.today_totals.weighted);
+    let t = match mode {
+        MenuBar::Usual => match s.usual.day {
+            Versus::Ratio { ratio, .. } => format!("{} usual", usual::multiple(ratio)),
+            // Too little history, or a usual day has barely started by now:
+            // no multiple against a tiny baseline, just today's amount.
+            _ if o.today_totals.weighted > 0.0 => weighted(),
+            _ => String::new(),
+        },
+        MenuBar::Context => match &s.active {
+            Some(a) if now_ms - a.last_ts <= ACTIVE_MS => {
+                format!("{} ctx", fmt::tokens(a.context))
+            }
+            _ => String::new(),
+        },
+        MenuBar::Weighted => weighted(),
+        MenuBar::Tokens => fmt::tokens(o.today_totals.total),
+        MenuBar::Cost => usage_core::cost::format_usd(o.today_totals.cost_usd),
+        MenuBar::Icon => String::new(),
+    };
+    (!t.is_empty()).then_some(t)
+}
+
+fn tokens_f(v: f64) -> String {
+    fmt::tokens(v.max(0.0).round() as u64)
+}
+
+/// One menu row. "-" is a separator and "session" the clickable session row;
+/// every other row is text only.
+struct Line {
+    id: &'static str,
+    text: String,
+}
+
+/// Headline and detail rows for a period against its usual.
+fn versus_lines(
+    name: &str,
+    usual_name: &str,
+    by: &str,
+    amount: f64,
+    v: Versus,
+    periods: &str,
+) -> (String, String) {
+    let amt = tokens_f(amount);
+    match v {
+        Versus::Ratio {
+            ratio,
+            usual_so_far,
+            usual_full,
+        } => (
+            format!(
+                "{name}: {} a usual {usual_name} by {by}",
+                usual::multiple(ratio)
+            ),
+            format!(
+                "{amt} weighted tokens so far; a usual {usual_name} has {} by now, {} in all",
+                tokens_f(usual_so_far),
+                tokens_f(usual_full)
+            ),
+        ),
+        Versus::Early { usual_full } => (
+            format!("{name}: {amt} weighted tokens so far"),
+            format!(
+                "A usual {usual_name} has barely started by {by} ({} in all)",
+                tokens_f(usual_full)
+            ),
+        ),
+        Versus::TooLittleHistory { have, need } => (
+            format!("{name}: {amt} weighted tokens so far"),
+            format!(
+                "Not enough history for a usual {usual_name} yet \
+                 ({have} of {need} {periods} with use in the last 4 weeks)"
+            ),
+        ),
+    }
+}
+
+fn menu_lines(s: &Snapshot, settings: &Settings, now: &Zoned) -> Vec<Line> {
+    let o = &s.overview;
+    let u = &s.usual;
+    let line = |id, text: String| Line { id, text };
+    let now_ms = now.timestamp().as_millisecond();
+    let mut v = vec![];
+
+    let (kind, kinds) = if u.weekend {
+        ("weekend day", "weekend days")
+    } else {
+        ("weekday", "weekdays")
+    };
+    let (a, b) = versus_lines("Today", kind, &o.as_of, u.today, u.day, kinds);
+    v.push(line("today", a));
+    v.push(line("today-detail", b));
+    let by = format!("{} {}", now.strftime("%a"), o.as_of);
+    let (a, b) = versus_lines("This week", "week", &by, u.week, u.week_vs, "weeks");
+    v.push(line("week", a));
+    v.push(line("week-detail", b));
+    v.push(line(
+        "weighted-help",
+        "Weighted tokens count each token by its price, so cheap cache reads count little".into(),
+    ));
+    v.push(line("-", String::new()));
+
     match &s.active {
         Some(a) => {
-            let label = format!("Latest session: {}", truncate(&a.title, 48));
-            menu.append(&MenuItem::with_id(
-                app,
+            let head = if now_ms - a.last_ts <= ACTIVE_MS {
+                "Active session"
+            } else {
+                "Latest session"
+            };
+            v.push(line(
                 "session",
-                label,
-                true,
-                None::<&str>,
-            )?)?;
-            let mut detail = format!(
-                "Context {} · {} requests",
+                format!("{head}: {}", truncate(&a.title, 48)),
+            ));
+            let window = settings.context_window_tokens.max(1);
+            let mut d = format!(
+                "Context {} ({:.0}% of a {} window) · {} requests",
                 fmt::tokens(a.context),
+                a.context as f64 / window as f64 * 100.0,
+                fmt::tokens(window),
                 a.requests
             );
-            if a.compactions_today > 0 {
-                let n = a.compactions_today;
-                detail += &format!(" · {n} compaction{} today", if n == 1 { "" } else { "s" });
+            match a.compactions_today {
+                0 => d += " · not compacted today",
+                n => d += &format!(" · compacted {n}× today"),
             }
-            detail += &format!(" · {}", ago(now.timestamp().as_millisecond() - a.last_ts));
-            menu.append(&info("session-detail", &detail)?)?;
+            d += &format!(" · {}", ago(now_ms - a.last_ts));
+            v.push(line("session-detail", d));
         }
-        None => menu.append(&info("session", "No sessions yet")?)?,
+        None => v.push(line("no-session", "No sessions yet".into())),
+    }
+    v.push(line("-", String::new()));
+
+    let t = &o.today_totals;
+    v.push(line(
+        "cost",
+        format!(
+            "API-equivalent cost: {} today · {} this week (not what a plan bills)",
+            usage_core::cost::format_usd(t.cost_usd),
+            usage_core::cost::format_usd(o.this_week.cost_usd)
+        ),
+    ));
+    let reads = if t.total > 0 {
+        t.cache_read as f64 / t.total as f64 * 100.0
+    } else {
+        0.0
+    };
+    v.push(line(
+        "tokens",
+        format!(
+            "Raw tokens: {} today, {reads:.0}% of them cache reads",
+            fmt::tokens(t.total)
+        ),
+    ));
+    v.push(line("-", String::new()));
+    v.push(line(
+        "limit",
+        "Plan-limit usage is not in local data, so it is not shown here".into(),
+    ));
+    v
+}
+
+fn build_menu(app: &AppHandle, lines: &[Line], mode: MenuBar) -> tauri::Result<Menu<Wry>> {
+    let menu = Menu::new(app)?;
+    for l in lines {
+        if l.id == "-" {
+            menu.append(&PredefinedMenuItem::separator(app)?)?;
+        } else {
+            let clickable = l.id == "session";
+            menu.append(&MenuItem::with_id(
+                app,
+                l.id,
+                &l.text,
+                clickable,
+                None::<&str>,
+            )?)?;
+        }
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&info("limit", "Plan-limit usage is not recorded locally")?)?;
-    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    let modes = Submenu::with_id(app, "menu-bar", "Menu bar shows", true)?;
+    for m in MenuBar::ALL {
+        modes.append(&CheckMenuItem::with_id(
+            app,
+            format!("{MODE_PREFIX}{}", m.id()),
+            m.label(),
+            true,
+            m == mode,
+            None::<&str>,
+        )?)?;
+    }
+    menu.append(&modes)?;
     menu.append(&MenuItem::with_id(
         app,
         "open",
@@ -274,14 +434,119 @@ fn icon() -> Image<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use usage_core::query::Totals;
+
+    fn snap(day: Versus, weighted: f64) -> Snapshot {
+        let o = Overview {
+            today: "2026-11-16".into(),
+            as_of: "14:05".into(),
+            today_totals: Totals {
+                weighted,
+                total: 12_000_000,
+                cost_usd: 68.53,
+                ..Default::default()
+            },
+            same_day_last_week: Totals::default(),
+            this_week: Totals::default(),
+            last_week_to_date: Totals::default(),
+            last_week: Totals::default(),
+            week_start: "2026-11-16".into(),
+        };
+        Snapshot {
+            overview: o,
+            usual: Report {
+                today: weighted,
+                day,
+                week: weighted,
+                week_vs: Versus::TooLittleHistory { have: 1, need: 3 },
+                weekend: false,
+            },
+            active: Some(ActiveSession {
+                id: "s".into(),
+                title: "Fix the tray".into(),
+                project: "/p".into(),
+                last_ts: 0,
+                context: 412_000,
+                requests: 120,
+                compactions_today: 1,
+            }),
+            notices: vec![],
+        }
+    }
+
+    #[test]
+    fn titles() {
+        let ratio = Versus::Ratio {
+            ratio: 1.42,
+            usual_so_far: 1e6,
+            usual_full: 3e6,
+        };
+        let s = snap(ratio, 1_420_000.0);
+        assert_eq!(title(MenuBar::Usual, &s, 0).as_deref(), Some("1.4× usual"));
+        assert_eq!(title(MenuBar::Weighted, &s, 0).as_deref(), Some("1.4M"));
+        assert_eq!(title(MenuBar::Tokens, &s, 0).as_deref(), Some("12.0M"));
+        assert_eq!(title(MenuBar::Cost, &s, 0).as_deref(), Some("$68.53"));
+        assert_eq!(title(MenuBar::Icon, &s, 0), None);
+        assert_eq!(
+            title(MenuBar::Context, &s, 60_000).as_deref(),
+            Some("412.0k ctx")
+        );
+        // An old session is not "active".
+        assert_eq!(title(MenuBar::Context, &s, ACTIVE_MS + 1), None);
+
+        // No multiple without enough history: today's amount instead.
+        let s = snap(Versus::TooLittleHistory { have: 2, need: 5 }, 800_000.0);
+        assert_eq!(title(MenuBar::Usual, &s, 0).as_deref(), Some("800.0k"));
+        let s = snap(Versus::Early { usual_full: 3e6 }, 0.0);
+        assert_eq!(title(MenuBar::Usual, &s, 0), None);
+    }
+
+    #[test]
+    fn menu_words() {
+        let (a, b) = versus_lines(
+            "Today",
+            "weekday",
+            "14:05",
+            1_420_000.0,
+            Versus::Ratio {
+                ratio: 1.42,
+                usual_so_far: 1e6,
+                usual_full: 3e6,
+            },
+            "weekdays",
+        );
+        assert_eq!(a, "Today: 1.4× a usual weekday by 14:05");
+        assert_eq!(
+            b,
+            "1.4M weighted tokens so far; a usual weekday has 1.0M by now, 3.0M in all"
+        );
+        let (_, b) = versus_lines(
+            "This week",
+            "week",
+            "Mon 09:00",
+            10.0,
+            Versus::TooLittleHistory { have: 1, need: 3 },
+            "weeks",
+        );
+        assert!(b.contains("1 of 3 weeks"), "{b}");
+        let s = snap(Versus::Early { usual_full: 3e6 }, 0.0);
+        let now = jiff::Timestamp::from_millisecond(60_000)
+            .unwrap()
+            .to_zoned(jiff::tz::TimeZone::UTC);
+        let lines = menu_lines(&s, &Settings::default(), &now);
+        let text: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        assert!(text.contains(&"Active session: Fix the tray"), "{text:?}");
+        assert!(
+            text.iter()
+                .any(|t| t.starts_with("Context 412.0k (41% of a 1.0M window)")
+                    && t.contains("compacted 1× today")),
+            "{text:?}"
+        );
+        assert!(text.iter().any(|t| t.starts_with("Plan-limit")));
+    }
 
     #[test]
     fn labels() {
-        assert_eq!(arrow(12.4), "↑12%");
-        assert_eq!(arrow(-7.6), "↓8%");
-        assert_eq!(arrow(0.2), "±0%");
-        assert_eq!(signed(None), "no data");
-        assert_eq!(signed(Some(-3.0)), "-3%");
         assert_eq!(truncate("abcdef", 4), "abc…");
         assert_eq!(ago(30_000), "just now");
         assert_eq!(ago(3 * 3_600_000), "3 h ago");
